@@ -1,0 +1,27 @@
+body{
+    background-image: url('/static/images/bg3.jpg');
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+.opt-div{
+    border-style: solid;
+    border-width: 3px;
+    border-color: aliceblue;
+    width: 70vh;
+    height: 50vh;
+    border-radius: 10px;
+    background-color: rgb(78, 64, 90);
+    margin-top: 20vh;
+    opacity: 0.8;
+}
+.option{
+    height: 7vh;
+    width: 12vw;
+    margin-top: 40px;
+    margin-right: 15px;
+}
+.text{
+    font-weight: 500;
+    color: rgb(255, 255, 255);
+    font-size: 16px;
+}
