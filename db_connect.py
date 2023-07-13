@@ -1,10 +1,41 @@
-import sqlite3
+import mysql.connector
 
-conn = sqlite3.connect('book_database.db')
-print("opened db successfully")
+# Establish a connection to MySQL server
+conn = mysql.connector.connect(
+    host='database-3.c41buvs5v5ho.ap-south-1.rds.amazonaws.com',
+    user='admin',
+    password='admin123',
+    database='healthchecks'
+)
+print("Connected to MySQL database successfully")
 
-conn.execute("CREATE TABLE books(book_id INTEGER,author TEXT,title TEXT,qty INTEGER)")
-conn.execute("CREATE TABLE students(stu_id INTEGER,book_id INTEGER,name TEXT,book_taken TEXT,qty INTEGER)")
-print("table created")
+# Create the books table
+books_table_query = """
+CREATE TABLE books (
+    book_id INT PRIMARY KEY,
+    author VARCHAR(255),
+    title VARCHAR(255),
+    qty INT
+)
+"""
+conn.cursor().execute(books_table_query)
+print("Created books table")
 
+# Create the students table
+students_table_query = """
+CREATE TABLE students (
+    stu_id INT PRIMARY KEY,
+    book_id INT,
+    name VARCHAR(255),
+    book_taken VARCHAR(255),
+    qty INT,
+    FOREIGN KEY (book_id) REFERENCES books (book_id)
+)
+"""
+conn.cursor().execute(students_table_query)
+print("Created students table")
+
+# Close the connection
 conn.close()
+
+
