@@ -5,10 +5,10 @@ app = Flask(__name__)
 
 # Establish MySQL database connection
 conn = mysql.connector.connect(
-    host='localhost',
-    user='root',
+    host='database-1.chgyov1i10un.ap-south-1.rds.amazonaws.com',
+    user='admin',
     password='admin123',
-    database='migration'
+    database='healthchecks'
 )
 print("Connected to MySQL database successfully")
 
@@ -42,6 +42,7 @@ def new_book():
             conn.rollback()
             msg = "Book already exists with the same ID"
             return render_template('result.html', msg=msg)
+    return render_template('add_book.html')
 
 @app.route('/take_books')
 def reqbooks():
@@ -49,55 +50,79 @@ def reqbooks():
 
 @app.route('/req_books', methods=['POST', 'GET'])
 def req_books():
-    book_name = request.form['book_name']
-    stu_id = request.form['stu_id']
-    stu_name = request.form['name']
-    req_qty = request.form['qty']
-    book_name = book_name
-    if request.method == 'POST': 
+    if request.method == 'POST':
+        book_name = request.form['book_name']
+        stu_id = request.form['stu_id']
+        stu_name = request.form['name']
+        req_qty = int(request.form['qty'])
+
         cursor = conn.cursor()
-        is_book_table_empty = cursor.execute("SELECT COUNT(*) FROM books").fetchone()[0]
-            
-        if is_book_table_empty != 0:
-            cursor.execute("SELECT title FROM books")
-            title_tpl_of_lst = cursor.fetchall()
-            title_lst = [item for tpl in title_tpl_of_lst for item in tpl]
 
-            table_lst_len = len(title_lst)
-            if table_lst_len >= 1 and book_name in title_lst:
-                return take_book_update(book_name, stu_id, stu_name, req_qty)
-            else:
-                msg = "Book not found"
-                return render_template("result.html", msg=msg)
-        else:
-            msg = "Table is empty"
+        # Check if the book exists in the database
+        cursor.execute("SELECT COUNT(*) FROM books WHERE title = %s", (book_name,))
+        book_count = cursor.fetchone()[0]
+
+        if book_count == 0:
+            msg = "Book not found"
             return render_template("result.html", msg=msg)
-    
-def take_book_update(book_name, stu_id, stu_name, req_qty):
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT book_id FROM books WHERE title = %s", (book_name,))
-        book_id = cursor.fetchone()[0]
 
+        # Check if the requested quantity is available
         cursor.execute("SELECT qty FROM books WHERE title = %s", (book_name,))
         book_qty = cursor.fetchone()[0]
 
-        if book_qty < int(req_qty):
+        if book_qty < req_qty:
             msg = "Sorry, book quantity is not available"
             return render_template("result.html", msg=msg)
-        else:
-            update_qty = book_qty - int(req_qty)
 
-            cursor.execute("UPDATE books SET qty = %s WHERE book_id = %s", (update_qty, book_id))
-            cursor.execute("INSERT INTO students (stu_id, book_id, name, book_taken, qty) VALUES (%s, %s, %s, %s, %s)", 
-                (stu_id, book_id, stu_name, book_name, req_qty))
-            conn.commit()
+        # Update book quantity and add book to students' table
+        update_qty = book_qty - req_qty
+        cursor.execute("UPDATE books SET qty = %s WHERE title = %s", (update_qty, book_name))
+        cursor.execute("INSERT INTO students (stu_id, book_id, name, book_taken, qty) VALUES (%s, (SELECT book_id FROM books WHERE title = %s), %s, %s, %s)",
+                       (stu_id, book_name, stu_name, book_name, req_qty))
+        conn.commit()
 
-            msg = "Book taken"
-            return render_template("result.html", msg=msg)
-    except:
-        msg = "Student already took a book with the same ID. Return the old books before taking a new one."
+        msg = "Book taken"
         return render_template("result.html", msg=msg)
+
+    return render_template("take_books.html")
+
+
+def take_book_update(book_name, stu_id, return_qty):
+    cursor = conn.cursor()
+    stu_id = int(stu_id)
+
+    # Check if the student has borrowed the book
+    cursor.execute("SELECT COUNT(*) FROM students WHERE stu_id = %s AND book_taken = %s", (stu_id, book_name))
+    book_count = cursor.fetchone()[0]
+
+    if book_count == 0:
+        msg = "This student does not have this book"
+        return render_template("result.html", msg=msg)
+
+    # Get the current quantity of the book borrowed by the student
+    cursor.execute("SELECT qty FROM students WHERE stu_id = %s AND book_taken = %s", (stu_id, book_name))
+    stu_avail_book_qty = cursor.fetchone()[0]
+
+    if int(return_qty) > stu_avail_book_qty:
+        msg = "Student does not have enough books to return"
+        return render_template("result.html", msg=msg)
+
+    # Update student quantity and book quantity
+    stu_update_qty = stu_avail_book_qty - int(return_qty)
+    cursor.execute("UPDATE students SET qty = %s WHERE stu_id = %s AND book_taken = %s", (stu_update_qty, stu_id, book_name))
+    conn.commit()
+
+    cursor.execute("SELECT qty FROM books WHERE title = %s", (book_name,))
+    book_avail_book_qty = cursor.fetchone()[0]
+
+    update_qty = book_avail_book_qty + int(return_qty)
+    cursor.execute("UPDATE books SET qty = %s WHERE title = %s", (update_qty, book_name))
+    conn.commit()
+
+    msg = "Book returned"
+    return render_template("result.html", msg=msg)
+
+
 
 @app.route('/return_books')
 def returnbooks():
@@ -107,68 +132,53 @@ def returnbooks():
 def book_return():
     if request.method == "POST":
         book_name = request.form['book_name']
-        return_qty = request.form['qty']
-        stu_id = request.form['stu_id']
-        stu_id = int(stu_id)
+        return_qty = int(request.form['qty'])
+        stu_id = int(request.form['stu_id'])
 
         cursor = conn.cursor()
-        is_stu_table_empty = cursor.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM students WHERE stu_id = %s", (stu_id,))
+        is_student_exist = cursor.fetchone()[0]
 
-        if is_stu_table_empty != 0:
-            cursor.execute("SELECT title FROM books")
-            title_tpl_of_lst = cursor.fetchall()
-            title_lst = [item for tpl in title_tpl_of_lst for item in tpl] 
-
-            stu_id_check = cursor.execute("SELECT stu_id FROM students").fetchall()
-            stu_id_check = [item for tpl in stu_id_check for item in tpl]
-
-            if stu_id in stu_id_check:
-                if book_name in title_lst:
-                    return return_book_update(book_name, stu_id, return_qty)
-                else:
-                    msg = "Book not found"
-                    return render_template("result.html", msg=msg)
-            else:
-                msg = "This student does not have any books!"
-                return render_template("result.html", msg=msg)
-        else:
-            msg = "No books have been taken yet!"
+        if is_student_exist == 0:
+            msg = "This student does not exist!"
             return render_template("result.html", msg=msg)
+
+        cursor.execute("SELECT COUNT(*) FROM students WHERE stu_id = %s AND book_taken = %s", (stu_id, book_name))
+        has_book = cursor.fetchone()[0]
+
+        if has_book == 0:
+            msg = "This student does not have this book!"
+            return render_template("result.html", msg=msg)
+
+        return return_book_update(book_name, stu_id, return_qty)
+
+    return render_template("return_books.html")
 
 def return_book_update(book_name, stu_id, return_qty):
-    cursor = conn.cursor()    
-    stu_id = int(stu_id)
-    is_ret_book_avail_str = ""
+    cursor = conn.cursor()
 
-    cursor.execute("SELECT book_taken FROM students WHERE stu_id = %s", (stu_id,))
-    is_ret_book_avail = cursor.fetchone()
-    for item in is_ret_book_avail:
-        is_ret_book_avail_str += item
+    cursor.execute("SELECT qty FROM students WHERE stu_id = %s AND book_taken = %s", (stu_id, book_name))
+    stu_avail_book_qty = cursor.fetchone()[0]
 
-    if is_ret_book_avail_str == book_name: 
-        cursor.execute("SELECT qty FROM students WHERE stu_id = %s", (stu_id,))
-        stu_avail_book_qty = cursor.fetchone()[0]
-
-        if int(return_qty) > stu_avail_book_qty:
-            msg = "Student does not have enough books to return"
-            return render_template("result.html", msg=msg)
-        else:     
-            msg = "Book returned"                       
-            stu_update_qty = stu_avail_book_qty - int(return_qty)
-            cursor.execute("UPDATE students SET qty = %s WHERE stu_id = %s", (stu_update_qty, stu_id))
-            conn.commit()            
-
-            cursor.execute("SELECT qty FROM books WHERE title = %s", (book_name,))
-            book_avail_book_qty = cursor.fetchone()[0]
-                                                
-            update_qty = book_avail_book_qty + int(return_qty)
-            cursor.execute("UPDATE books SET qty = %s WHERE title = %s", (update_qty, book_name))
-            conn.commit()
-
-            return render_template("result.html", msg=msg)
-    else:
-        msg = "This student does not have this book"
+    if return_qty > stu_avail_book_qty:
+        msg = "Student does not have enough books to return"
         return render_template("result.html", msg=msg)
+
+    # Update student quantity and book quantity
+    stu_update_qty = stu_avail_book_qty - return_qty
+    cursor.execute("UPDATE students SET qty = %s WHERE stu_id = %s AND book_taken = %s", (stu_update_qty, stu_id, book_name))
+    conn.commit()
+
+    cursor.execute("SELECT qty FROM books WHERE title = %s", (book_name,))
+    book_avail_book_qty = cursor.fetchone()[0]
+
+    update_qty = book_avail_book_qty + return_qty
+    cursor.execute("UPDATE books SET qty = %s WHERE title = %s", (update_qty, book_name))
+    conn.commit()
+
+    msg = "Book returned"
+    return render_template("result.html", msg=msg)
+
 
 @app.route('/lst_taken_books')
 def lst_taken_books():
@@ -181,11 +191,18 @@ def lst_taken_books():
 
 @app.route('/list_books')
 def list_books():
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM books")
-    rows = cursor.fetchall()
-    print(rows)
-    return render_template("list_books.html", rows=rows)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT *from books")
+        rows = cursor.fetchall()
+        print(rows)
+        cursor.close()
+
+        return render_template("list_books.html", rows=rows)
+    except mysql.connector.Error as e:
+        print("Error fetching data from the database:", e)
+        return render_template("error.html")
+
 
 if __name__ == "__main__":
     app.run(debug=True)
