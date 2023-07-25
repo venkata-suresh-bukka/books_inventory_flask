@@ -25,11 +25,11 @@
 
                 {% for row in rows %}
                     <tr>
-                        <td class="table-primary">{{row['book_id']}}</td>
-                        <td class="table-primary">{{row['stu_id']}}</td>
-                        <td class="table-primary">{{row['name']}}</td>
-                        <td class="table-primary">{{row['book_taken']}}</td>
-                        <td class="table-primary">{{row['qty']}}</td>
+                      <td class="table-primary" style="color: black;">{{ row.0 }}</td>
+                      <td class="table-primary" style="color: black;">{{ row.1 }}</td>
+                      <td class="table-primary" style="color: black;">{{ row.2 }}</td>
+                      <td class="table-primary" style="color: black;">{{ row.3 }}</td>
+                      <td class="table-primary" style="color: black;">{{ row.4 }}</td>
                     </tr>
                 {% endfor %}
             </tbody>
